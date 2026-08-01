@@ -11,12 +11,50 @@
 //      then executes those sources once storage has hydrated
 // No npm dependencies — Node built-ins only.
 
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, statSync, existsSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { execFileSync } from 'node:child_process';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const pixable = resolve(here, process.argv[2] || '../Pixable');
+const args = process.argv.slice(2).filter(a => a !== '--check');
+const CHECK_ONLY = process.argv.includes('--check');
+const pixable = resolve(here, args[0] || '../Pixable');
+const OUT = join(here, 'dist', 'ui.html');
+
+// Figma loads dist/ui.html straight off disk with no build step, so a bundle
+// built before a Pixable change silently ships stale app code. That already
+// caused one phantom bug report (a focus fix that existed upstream but not in
+// the bundle), hence `node build.mjs --check` before importing.
+const SOURCE_FILES = ['index.html', 'style.css', 'colorways.js', 'sprites.js', 'app.js', 'freehand.js', 'ai.js']
+  .map(f => join(pixable, f))
+  .concat([join(here, 'src', 'ui-shim.js'), join(here, 'src', 'ui-overrides.js')]);
+
+if (CHECK_ONLY) {
+  if (!existsSync(OUT)) {
+    console.error('STALE: dist/ui.html does not exist — run `node build.mjs`');
+    process.exit(1);
+  }
+  const built = statSync(OUT).mtimeMs;
+  const newer = SOURCE_FILES.filter(f => existsSync(f) && statSync(f).mtimeMs > built);
+  if (newer.length) {
+    console.error(`STALE: ${newer.length} source file(s) changed since the last build:`);
+    for (const f of newer) console.error('  ' + f);
+    console.error('Run `node build.mjs`, then re-run the plugin in Figma.');
+    process.exit(1);
+  }
+  console.log('dist/ui.html is up to date with all sources.');
+  process.exit(0);
+}
+
+// Which Pixable revision is going into this bundle — printed and stamped, so a
+// mismatch between plugin behaviour and the web app is traceable.
+let stamp = 'unknown';
+try {
+  const rev = execFileSync('git', ['-C', pixable, 'rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim();
+  const dirty = execFileSync('git', ['-C', pixable, 'status', '--porcelain'], { encoding: 'utf8' }).trim();
+  stamp = rev + (dirty ? '-dirty' : '');
+} catch { /* not a git checkout; the stamp is informational only */ }
 
 let html = readFileSync(join(pixable, 'index.html'), 'utf8');
 
@@ -64,10 +102,14 @@ if (hits !== 1) throw new Error(`ui-shim.js must contain __SOURCES__ exactly onc
 const shim = shimSrc.replace('__SOURCES__', () => payload);
 
 html = html.replace(/<\/body>/i, `<script>\n${shim}\n</script>\n</body>`);
+html = `<!-- built from Pixable @ ${stamp} -->\n` + html;
 
 mkdirSync(join(here, 'dist'), { recursive: true });
-writeFileSync(join(here, 'dist', 'ui.html'), html);
+writeFileSync(OUT, html);
 console.log(
-  `dist/ui.html written (${(html.length / 1024).toFixed(0)} KB, ` +
-  `${sources.length} scripts: ${sources.map(s => s.name).join(', ')})`
+  `dist/ui.html written from Pixable @ ${stamp} ` +
+  `(${(html.length / 1024).toFixed(0)} KB, ${sources.length} scripts: ${sources.map(s => s.name).join(', ')})`
 );
+if (stamp.endsWith('-dirty')) {
+  console.log('note: the Pixable working tree has uncommitted changes.');
+}

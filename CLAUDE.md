@@ -12,6 +12,7 @@ Figma plugin wrapper around the Pixable web app. **Never copy/fork Pixable sourc
 - Downloads are intercepted (`HTMLAnchorElement.prototype.click`) and become canvas inserts. Don't "fix" Pixable's export code to bypass anchors.
 - The AI proxy CORS allowlist lives in `Pixable/proxy/wrangler.toml`; plugin origin is the literal string `null`. Redeploys are user-run (`npx wrangler deploy`).
 - Build: `node build.mjs` (no npm deps, Node built-ins only). Test = import `manifest.json` in Figma desktop — there is no automated test rig; say so instead of claiming verification.
+- **Rebuild after every Pixable change.** Figma reads `dist/ui.html` off disk with no build step, so a stale bundle silently runs old app code. This already produced a phantom bug report — a focus fix (Pixable `dd2824a`) existed upstream but not in the bundle. Run `node build.mjs --check` (exits 1 when stale) before diagnosing *any* reported bug, and suspect staleness first when behaviour differs from the web app. Each build stamps the Pixable commit into the first line of `dist/ui.html`.
 
 ## User-owned steps (never attempt these yourself)
 - Creating/linking the dev plugin in Figma desktop (produces the manifest `id`)

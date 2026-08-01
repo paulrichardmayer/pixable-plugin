@@ -13,8 +13,11 @@ The plugin does **not** fork Pixable. A build script (`build.mjs`) reads the web
 
 ```
 node build.mjs        # reads ../Pixable, writes dist/ui.html
+node build.mjs --check # exits 1 if Pixable changed since the last build
 ```
 
 Then in Figma desktop: **Plugins → Development → Import plugin from manifest…** and pick `manifest.json`.
+
+**Rebuild after every Pixable change.** Figma loads `dist/ui.html` directly with no build step, so a stale bundle keeps running old app code — behaviour then differs from the live site for no visible reason. Each build stamps the Pixable commit into the first line of `dist/ui.html`.
 
 See [ROADMAP.md](ROADMAP.md) for the plan and current status.
