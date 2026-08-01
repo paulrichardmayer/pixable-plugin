@@ -27,8 +27,8 @@ Make it feel native to a plugin panel, not a website in a box.
 - [x] Removed COPY (iframe has no `clipboard-write` permission) and SAVE (canvas is the save destination); `generate` expands to the full row
 - [x] `figma.openExternal` relay for the credit link
 - [x] Plugin icon (`assets/icon.png`, 128×128) from the app's own controls face
-- [x] Node-count guard: shapes counted before insert; above 5,000 the raster goes in instead, with a toast saying why. Measured counts (1328×768 canvas, by px-per-cell): 4px → 56,321 · 8px → 12,801 · 16px → 2,561 · 24px → 769
-- [ ] **Insert one tile, not the whole canvas.** The real fix for the above — the export covers the entire viewport, so the default density is ~12.8k nodes and always rasterises. Emitting a single motif tile would put coarse *and* fine patterns in as editable vectors, and Figma can repeat the tile
+- [x] **SVG inserts one motif tile, not the whole canvas.** `exportAsSVG` paints every cell across the viewport (4px cells → 56,321 shapes; the 8px default → 12,801). The motif is only `dim²` cells, so `px.buildTileSvg` re-emits a single tile with the app's own `_currentMotif`/`_svgSquareShape`: **257 shapes at every density**, verified rendering with exactly the active palette. Vectors now survive at any grid size
+- [x] Node-count guard retained as the safety net for the whole-canvas path (hexagons, which don't tile to a rectangle): >5,000 shapes inserts the raster instead, with a toast saying why
 - [ ] Wire `figma.ui.resize` to a drag handle + persist the chosen size
 - [ ] Verify Google Fonts actually loads in the iframe; if not, inline Host Grotesk as a data URI
 

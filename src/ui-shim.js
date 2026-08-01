@@ -88,6 +88,11 @@
         post({ type: 'notify', message: 'Insert failed: ' + e.message });
       };
       if (/\.svg$/i.test(dl)) {
+        // Preferred path: one motif tile, always small enough to stay vectors.
+        const tile = px.buildTileSvg && px.buildTileSvg();
+        if (tile) return post({ type: 'insert-svg', svg: tile.svg, name });
+        // Hexagons (and anything unexpected) still use the whole-canvas export,
+        // which needs the node guard below.
         fetch(this.href).then(r => r.text())
           .then(async (svg) => {
             const n = countShapes(svg);
