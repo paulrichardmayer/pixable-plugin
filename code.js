@@ -87,6 +87,10 @@ figma.ui.onmessage = async (msg) => {
     }
   } catch (e) {
     figma.notify(`Pixatile: ${e.message}`, { error: true });
-    figma.ui.postMessage({ type: 'insert-failed' });
+    // Only an insert owns a pending button — a failed storage write must not
+    // settle one.
+    if (msg.type === 'insert-svg' || msg.type === 'insert-png') {
+      figma.ui.postMessage({ type: 'insert-failed' });
+    }
   }
 };
