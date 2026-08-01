@@ -239,6 +239,14 @@
     if (el) { el.textContent = text; el.dataset.label = text; }
   }
 
+  // ---- credit pill -> full version ---------------------------------------
+  // In the panel the byline is less useful than a way out to the full app.
+  const madeBy = document.getElementById('made-by-tag');
+  if (madeBy) {
+    madeBy.textContent = 'go to full version';
+    madeBy.href = 'https://pixatile.paulrmayer.com/';
+  }
+
   // ---- external links ----------------------------------------------------
   // Plugin iframes have no opener; route clicks through figma.openExternal.
   document.addEventListener('click', (e) => {
