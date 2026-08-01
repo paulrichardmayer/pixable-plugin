@@ -1,6 +1,6 @@
-# Pixable for Figma
+# Pixatile for Figma
 
-Figma plugin wrapper for [Pixable](https://github.com/paulrichardmayer/Pixable) — generate pixel & freehand patterns and insert them into your Figma file as editable vectors or image fills.
+Figma plugin wrapper for [Pixable](https://github.com/paulrichardmayer/Pixable) — generate pixel & freehand patterns and insert them into your Figma file as editable vectors or image fills. Ships as **Pixatile**, matching [pixatile.paulrmayer.com](https://pixatile.paulrmayer.com).
 
 ## How it works
 

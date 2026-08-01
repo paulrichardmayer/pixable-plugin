@@ -1,9 +1,12 @@
 {
-  "name": "Pixable",
-  "id": "REPLACE_WITH_FIGMA_PLUGIN_ID",
+  "name": "Pixatile",
+  "id": "1665490627236631187",
   "api": "1.0.0",
   "main": "code.js",
   "ui": "dist/ui.html",
+  "capabilities": [],
+  "enableProposedApi": false,
+  "documentAccess": "dynamic-page",
   "editorType": ["figma"],
   "networkAccess": {
     "allowedDomains": [

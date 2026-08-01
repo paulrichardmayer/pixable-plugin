@@ -14,7 +14,7 @@ The app runs inside the Figma panel; patterns insert into the canvas.
 - [x] `build.mjs`: inline `style.css` + 5 JS files + inline scripts into one `ui.html`, strip CSP meta, preserve script order
 - [x] `localStorage` shim → `figma.clientStorage` (hydrate-at-boot handshake so reads stay synchronous)
 - [x] Download interception: `a.click()` with `download` set → postMessage → `createNodeFromSvg` / `createImage`
-- [ ] **YOU:** create a dev plugin in Figma desktop (Plugins → Development → New… → "Link existing plugin") to get a plugin `id`, paste it into `manifest.json`
+- [x] Plugin `id` registered with Figma (`1665490627236631187`, name "Pixatile", `documentAccess: dynamic-page`)
 - [ ] First manual smoke test in Figma desktop (both modes, save/restore, insert SVG + PNG)
 
 ## Phase 2 — Fit & finish
