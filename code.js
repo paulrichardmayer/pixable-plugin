@@ -2,9 +2,10 @@
 // The UI iframe is the whole Pixable web app (built by build.mjs). This side
 // only does what the iframe can't: clientStorage persistence and canvas writes.
 
-// 880 wide is deliberate: Pixable switches to its phone layout at 820px, and
-// the plugin panel should read as a desktop tool.
-figma.showUI(__html__, { width: 880, height: 720, themeColors: false });
+// Square, and deliberately under Pixable's 820px breakpoint so the phone
+// layout loads: the dock + bottom sheet suit a plugin panel better than the
+// desktop chrome, and a square canvas previews a repeating pattern honestly.
+figma.showUI(__html__, { width: 700, height: 700, themeColors: false });
 
 // ---- storage bridge -------------------------------------------------------
 // The UI's localStorage shim keeps an in-memory mirror; we hydrate it once at
@@ -38,9 +39,55 @@ function insertSvg(svg, name) {
   return frame;
 }
 
-async function insertPng(bytes, name) {
+// Fill a W×H frame by repeating the motif tile. The tile becomes a component
+// and the frame holds instances, so the whole pattern stays one editable
+// object: edit the component once and every repeat follows. Instances are far
+// cheaper than cloning the tile's ~257 vectors per repeat.
+function insertTiled(svg, name, W, H) {
+  const tile = figma.createNodeFromSvg(svg);
+  tile.fills = [];
+  tile.name = `${name} tile`;
+
+  const frame = figma.createFrame();
+  frame.resize(W, H);
+  frame.fills = [];
+  frame.clipsContent = true;
+
+  let component = null;
+  try {
+    component = figma.createComponentFromNode(tile);
+    const cols = Math.ceil(W / component.width);
+    const rows = Math.ceil(H / component.height);
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const inst = component.createInstance();
+        inst.x = c * component.width;
+        inst.y = r * component.height;
+        frame.appendChild(inst);
+      }
+    }
+  } catch (e) {
+    // No components available — drop back to a single tile so the user still
+    // gets editable vectors rather than nothing.
+    frame.remove();
+    placeFrame(tile, name);
+    figma.notify(`Inserted a single tile — ${e.message}`);
+    return tile;
+  }
+
+  placeFrame(frame, name);
+  // Park the master just outside the frame so it is findable but not overlapping.
+  component.name = `${name} tile`;
+  component.x = frame.x - component.width - 48;
+  component.y = frame.y;
+  return frame;
+}
+
+async function insertPng(bytes, name, size) {
   const image = figma.createImage(new Uint8Array(bytes));
-  const { width, height } = await image.getSizeAsync();
+  const natural = await image.getSizeAsync();
+  const width = size ? size.w : natural.width;
+  const height = size ? size.h : natural.height;
   const rect = figma.createRectangle();
   rect.resize(width, height);
   rect.fills = [{ type: 'IMAGE', scaleMode: 'FILL', imageHash: image.hash }];
@@ -68,18 +115,23 @@ figma.ui.onmessage = async (msg) => {
         await figma.clientStorage.deleteAsync(msg.key);
         break;
       case 'insert-svg':
-        insertSvg(msg.svg, msg.name || 'Pixatile pattern');
+        if (msg.size) insertTiled(msg.svg, msg.name || 'Pixatile pattern', msg.size.w, msg.size.h);
+        else insertSvg(msg.svg, msg.name || 'Pixatile pattern');
         figma.ui.postMessage({ type: 'insert-done' });
         if (msg.heavy) {
           figma.notify(`${msg.heavy.toLocaleString()} shapes — this may be slow to edit`);
         }
         break;
       case 'insert-png':
-        await insertPng(msg.bytes, msg.name || 'Pixatile pattern');
+        await insertPng(msg.bytes, msg.name || 'Pixatile pattern', msg.size);
         figma.ui.postMessage({ type: 'insert-done' });
         if (msg.fellBackFrom) {
           figma.notify(
             `Too dense for vectors (${msg.fellBackFrom.toLocaleString()} shapes) — inserted as an image`
+          );
+        } else if (msg.tooManyRepeats) {
+          figma.notify(
+            `${msg.tooManyRepeats.toLocaleString()} tile repeats at this size — inserted as an image`
           );
         }
         break;

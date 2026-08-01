@@ -21,10 +21,15 @@ The app runs inside the Figma panel; patterns insert into the canvas.
 
 Make it feel native to a plugin panel, not a website in a box.
 
-- [x] Panel default 880×720 — deliberately above Pixable's 820px phone breakpoint, so the desktop layout (and no mobile dock/scrim) is what loads
+- [x] Panel 700×700 — square, and under the 820px breakpoint so the phone layout (dock + bottom sheet) loads, which suits a plugin panel and previews a repeating pattern honestly
+- [x] **Export size (W × H)** in both control panels, default FHD 1920×1080, persisted. Fields carry the real `.btn` class so they inherit the pill shape and every responsive override rather than drifting. Clamped 16–8192; hotkeys suppressed while typing
+- [x] Export honours that size: PNG rasterises the tile and repeats it to exactly W×H (verified pixel-perfect — 0 seam mismatches over 80 boundary samples); SVG fills a W×H frame with instances of one tile component, so the whole pattern stays editable from a single master
+- [x] Instance budget: above 2,500 repeats the insert degrades to a raster of the same size (8192² → 4,096 repeats → raster)
+- [x] Watchdog on pending inserts — a lost sandbox reply used to leave the export button disabled permanently
+- [x] `?figma=1` forces the plugin code path in a plain browser, so the panel UI is testable without a Figma round trip
 - [x] Insert lands as a **named frame** (`Pixatile · <style> · <SEED>`)
 - [x] PNG/SVG relabelled "INSERT PNG/SVG" and report `imported!` on the sandbox's confirmation, not optimistically
-- [x] Removed COPY (iframe has no `clipboard-write` permission) and SAVE (canvas is the save destination); `generate` expands to the full row
+- [x] Removed COPY (iframe has no `clipboard-write` permission) and SAVE (canvas is the save destination) in **both** modes; `generate` expands to the full row
 - [x] `figma.openExternal` relay for the credit link
 - [x] Plugin icon (`assets/icon.png`, 128×128) from the app's own controls face
 - [x] **SVG inserts one motif tile, not the whole canvas.** `exportAsSVG` paints every cell across the viewport (4px cells → 56,321 shapes; the 8px default → 12,801). The motif is only `dim²` cells, so `px.buildTileSvg` re-emits a single tile with the app's own `_currentMotif`/`_svgSquareShape`: **257 shapes at every density**, verified rendering with exactly the active palette. Vectors now survive at any grid size

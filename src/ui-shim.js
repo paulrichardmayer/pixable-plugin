@@ -9,7 +9,10 @@
   'use strict';
 
   // Null-origin iframes throw on localStorage access; that's our env probe.
-  let IN_FIGMA = false;
+  // `?figma=1` forces the same path in an ordinary browser so the plugin UI
+  // (export-size row, insert feedback, hidden buttons) can be exercised
+  // without a Figma round trip — postMessages just land back on this window.
+  let IN_FIGMA = /[?&]figma=1(&|$)/.test(location.search);
   try { void window.localStorage; } catch (e) { IN_FIGMA = true; }
 
   const post = (m) => parent.postMessage({ pluginMessage: m }, '*');
@@ -87,12 +90,31 @@
         px.settle(false);
         post({ type: 'notify', message: 'Insert failed: ' + e.message });
       };
-      if (/\.svg$/i.test(dl)) {
-        // Preferred path: one motif tile, always small enough to stay vectors.
-        const tile = px.buildTileSvg && px.buildTileSvg();
-        if (tile) return post({ type: 'insert-svg', svg: tile.svg, name });
-        // Hexagons (and anything unexpected) still use the whole-canvas export,
-        // which needs the node guard below.
+      const wantVector = /\.svg$/i.test(dl);
+      const plan = px.planInsert && px.planInsert(wantVector);
+
+      // Vectors at the requested size: one tile, repeated as instances.
+      if (plan && plan.kind === 'vector') {
+        return post({ type: 'insert-svg', svg: plan.tile.svg, name, size: plan.size });
+      }
+      // A raster of the requested size — either PNG was asked for, or the
+      // repeat count would have made the vector document unworkable.
+      if (plan && plan.kind === 'raster') {
+        px.tiledPng(plan.tile.svg, plan.size.w, plan.size.h)
+          .then(bytes => {
+            if (!bytes) throw new Error('could not rasterise the tile');
+            post({
+              type: 'insert-png', bytes, name, size: plan.size,
+              tooManyRepeats: wantVector ? plan.repeats : 0,
+            });
+          })
+          .catch(fail);
+        return;
+      }
+
+      // plan.kind === 'fallback': hexagons and freehand, which have no motif
+      // tile to repeat, keep the app's own viewport-sized export.
+      if (wantVector) {
         fetch(this.href).then(r => r.text())
           .then(async (svg) => {
             const n = countShapes(svg);
