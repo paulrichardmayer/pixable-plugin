@@ -15,18 +15,21 @@ The app runs inside the Figma panel; patterns insert into the canvas.
 - [x] `localStorage` shim → `figma.clientStorage` (hydrate-at-boot handshake so reads stay synchronous)
 - [x] Download interception: `a.click()` with `download` set → postMessage → `createNodeFromSvg` / `createImage`
 - [x] Plugin `id` registered with Figma (`1665490627236631187`, name "Pixatile", `documentAccess: dynamic-page`)
-- [ ] First manual smoke test in Figma desktop (both modes, save/restore, insert SVG + PNG)
+- [x] First smoke test in Figma desktop — panel opens, app runs
 
 ## Phase 2 — Fit & finish
 
 Make it feel native to a plugin panel, not a website in a box.
 
-- [ ] Panel sizing: pick default (≈480×720), wire `figma.ui.resize` to a drag handle
-- [ ] Lean on the existing mobile layout (dock + bottom sheet) for narrow widths; replace pinch-zoom with wheel/trackpad
+- [x] Panel default 880×720 — deliberately above Pixable's 820px phone breakpoint, so the desktop layout (and no mobile dock/scrim) is what loads
+- [x] Insert lands as a **named frame** (`Pixatile · <style> · <SEED>`)
+- [x] PNG/SVG relabelled "INSERT PNG/SVG" and report `imported!` on the sandbox's confirmation, not optimistically
+- [x] Removed COPY (iframe has no `clipboard-write` permission) and SAVE (canvas is the save destination); `generate` expands to the full row
+- [x] `figma.openExternal` relay for the credit link
+- [x] Plugin icon (`assets/icon.png`, 128×128) from the app's own controls face
 - [ ] Node-count guard: estimate cell count before SVG insert; above ~5k cells insert as PNG image fill instead (with a toast explaining why)
-- [ ] Relabel export buttons in plugin context ("Insert as vectors" / "Insert as image") via injected CSS/JS, not Pixable edits
-- [ ] `window.open` (credit link) → `figma.openExternal` relay
-- [ ] Google Fonts: either bundle the Host Grotesk woff2 as data URI or declare fonts domains in `networkAccess`
+- [ ] Wire `figma.ui.resize` to a drag handle + persist the chosen size
+- [ ] Verify Google Fonts actually loads in the iframe; if not, inline Host Grotesk as a data URI
 
 ## Phase 3 — AI feature
 
@@ -46,7 +49,8 @@ The features that justify installing a plugin instead of using the website.
 
 ## Phase 5 — Publish
 
-- [ ] Icons + cover art (Figma Community listing needs 128×128 icon, 1920×960 cover)
+- [x] Plugin icon — `assets/icon.png`
+- [ ] Cover art (Community listing needs 1920×960)
 - [ ] **YOU:** Figma Community review submission (needs your Figma account; review takes ~1–2 weeks)
 - [ ] Decide free vs. paid; wire nothing — Community handles distribution
 
