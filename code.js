@@ -70,10 +70,18 @@ figma.ui.onmessage = async (msg) => {
       case 'insert-svg':
         insertSvg(msg.svg, msg.name || 'Pixatile pattern');
         figma.ui.postMessage({ type: 'insert-done' });
+        if (msg.heavy) {
+          figma.notify(`${msg.heavy.toLocaleString()} shapes — this may be slow to edit`);
+        }
         break;
       case 'insert-png':
         await insertPng(msg.bytes, msg.name || 'Pixatile pattern');
         figma.ui.postMessage({ type: 'insert-done' });
+        if (msg.fellBackFrom) {
+          figma.notify(
+            `Too dense for vectors (${msg.fellBackFrom.toLocaleString()} shapes) — inserted as an image`
+          );
+        }
         break;
       case 'open-url':
         figma.openExternal(msg.url);
