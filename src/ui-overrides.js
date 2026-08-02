@@ -48,7 +48,7 @@
   // ---- export size --------------------------------------------------------
   // Figma wants a concrete artboard size, not "whatever the viewport was".
   // Default FHD; clamped to something Figma can actually hold.
-  const SIZE_KEY = 'pixatile.exportSize';
+  const SIZE_KEY = 'pixeltile.exportSize';
   const DEFAULT_SIZE = { w: 1920, h: 1080 };
   const MIN_PX = 16, MAX_PX = 8192;
   // Above this many repeats the instance grid stops being worth it, so the

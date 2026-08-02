@@ -71,9 +71,9 @@
   function prettyName(filename) {
     const base = filename.replace(/\.(png|svg)$/i, '');
     const grid = base.match(/^pixelgrid-(.+)-([0-9A-F]{6})$/i);
-    if (grid) return `Pixatile · ${grid[1]} · ${grid[2].toUpperCase()}`;
-    if (/freehand/i.test(base)) return 'Pixatile · freehand';
-    return 'Pixatile pattern';
+    if (grid) return `Pixel Tile · ${grid[1]} · ${grid[2].toUpperCase()}`;
+    if (/freehand/i.test(base)) return 'Pixel Tile · freehand';
+    return 'Pixel Tile pattern';
   }
 
   // ---- download interception --------------------------------------------

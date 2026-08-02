@@ -1,4 +1,4 @@
-// Pixatile plugin — Figma main thread (sandbox).
+// Pixel Tile plugin — Figma main thread (sandbox).
 // The UI iframe is the whole Pixable web app (built by build.mjs). This side
 // only does what the iframe can't: clientStorage persistence and canvas writes.
 
@@ -115,15 +115,15 @@ figma.ui.onmessage = async (msg) => {
         await figma.clientStorage.deleteAsync(msg.key);
         break;
       case 'insert-svg':
-        if (msg.size) insertTiled(msg.svg, msg.name || 'Pixatile pattern', msg.size.w, msg.size.h);
-        else insertSvg(msg.svg, msg.name || 'Pixatile pattern');
+        if (msg.size) insertTiled(msg.svg, msg.name || 'Pixel Tile pattern', msg.size.w, msg.size.h);
+        else insertSvg(msg.svg, msg.name || 'Pixel Tile pattern');
         figma.ui.postMessage({ type: 'insert-done' });
         if (msg.heavy) {
           figma.notify(`${msg.heavy.toLocaleString()} shapes — this may be slow to edit`);
         }
         break;
       case 'insert-png':
-        await insertPng(msg.bytes, msg.name || 'Pixatile pattern', msg.size);
+        await insertPng(msg.bytes, msg.name || 'Pixel Tile pattern', msg.size);
         figma.ui.postMessage({ type: 'insert-done' });
         if (msg.fellBackFrom) {
           figma.notify(
@@ -146,7 +146,7 @@ figma.ui.onmessage = async (msg) => {
         break;
     }
   } catch (e) {
-    figma.notify(`Pixatile: ${e.message}`, { error: true });
+    figma.notify(`Pixel Tile: ${e.message}`, { error: true });
     // Only an insert owns a pending button — a failed storage write must not
     // settle one.
     if (msg.type === 'insert-svg' || msg.type === 'insert-png') {

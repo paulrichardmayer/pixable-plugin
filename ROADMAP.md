@@ -14,7 +14,7 @@ The app runs inside the Figma panel; patterns insert into the canvas.
 - [x] `build.mjs`: inline `style.css` + 5 JS files + inline scripts into one `ui.html`, strip CSP meta, preserve script order
 - [x] `localStorage` shim → `figma.clientStorage` (hydrate-at-boot handshake so reads stay synchronous)
 - [x] Download interception: `a.click()` with `download` set → postMessage → `createNodeFromSvg` / `createImage`
-- [x] Plugin `id` registered with Figma (`1665490627236631187`, name "Pixatile", `documentAccess: dynamic-page`)
+- [x] Plugin `id` registered with Figma (`1665490627236631187`, `documentAccess: dynamic-page`). Registered as "Pixatile"; renamed to **Pixel Tile** — the id is what Figma keys on, so the rename needs no re-registration
 - [x] First smoke test in Figma desktop — panel opens, app runs
 
 ## Phase 2 — Fit & finish
@@ -27,7 +27,7 @@ Make it feel native to a plugin panel, not a website in a box.
 - [x] Instance budget: above 2,500 repeats the insert degrades to a raster of the same size (8192² → 4,096 repeats → raster)
 - [x] Watchdog on pending inserts — a lost sandbox reply used to leave the export button disabled permanently
 - [x] `?figma=1` forces the plugin code path in a plain browser, so the panel UI is testable without a Figma round trip
-- [x] Insert lands as a **named frame** (`Pixatile · <style> · <SEED>`)
+- [x] Insert lands as a **named frame** (`Pixel Tile · <style> · <SEED>`)
 - [x] PNG/SVG relabelled "INSERT PNG/SVG" and report `imported!` on the sandbox's confirmation, not optimistically
 - [x] Removed COPY (iframe has no `clipboard-write` permission) and SAVE (canvas is the save destination) in **both** modes; `generate` expands to the full row
 - [x] `figma.openExternal` relay for the credit link
