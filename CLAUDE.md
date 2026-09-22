@@ -9,6 +9,7 @@ Figma plugin wrapper around the Pixable web app. **Never copy/fork Pixable sourc
 ## Key facts
 - `manifest.json` → `main: code.js` (Figma sandbox), `ui: dist/ui.html` (iframe).
 - Plugin iframes have no `localStorage` (null origin) — the injected shim mirrors an in-memory copy to `figma.clientStorage` via postMessage; hydration happens before app scripts run. Don't add direct `localStorage` calls.
+- **No scroll bars anywhere in the plugin** (the user's product rule). Every panel must fit the 720×720 window in *all* states — measure worst cases (chips picked, "Other" inputs open, error + busy rows), not just the opening view. Trim options in `ui-overrides.js` rather than let a panel scroll; the website keeps its full set.
 - The plugin always runs Pixable's **web layout**: `ui-shim.js` makes the 820px phone-layout media query never match. Don't bring the phone layout back — it hides every editor. Test the panel with `dist/ui.html?figma=1` at 720×720.
 - Exports are mode-aware in `px.handleExport` (`ui-overrides.js`); never build output without checking pixelated vs freehand — a mode-blind builder once inserted the wrong pattern for every freehand user.
 - Downloads are intercepted (`HTMLAnchorElement.prototype.click`) and become canvas inserts. Don't "fix" Pixable's export code to bypass anchors.

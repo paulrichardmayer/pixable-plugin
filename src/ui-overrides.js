@@ -382,6 +382,47 @@
     madeBy.href = 'https://pixatile.paulrmayer.com/';
   }
 
+  // ---- AI panel: fit without scrolling --------------------------------------
+  // Product rule: no scroll bars in the plugin. At 720px the full web survey
+  // measured 683px of a 688px cap (5px spare) and 825px in its worst state
+  // (chips picked + both "Other" boxes + an error). Trims, chosen for overlap:
+  //   mood   − dense, sparse (level/refine cover density), monochrome (the
+  //            palette decides colour), smooth (≈ soft), glitchy (≈ chaotic)
+  //   theme  − down to one row; "Other" still takes any theme
+  //   detail − slider hidden and pinned to "balanced"; denser/sparser refine
+  //            chips adjust density after generating
+  // Result: 478px default, ~620px worst case. The website keeps everything.
+  const AI_DROP = {
+    'mood-tags': ['dense', 'sparse', 'monochrome', 'smooth', 'glitchy'],
+    'culture-tags': ['Aztec', 'Celtic', 'Tribal', 'Brutalist', 'Ukiyo-e'],
+  };
+  for (const [group, tags] of Object.entries(AI_DROP)) {
+    for (const tag of tags) {
+      const chip = document.querySelector(`#${group} [data-tag="${tag}"]`);
+      if (chip) chip.remove();
+    }
+  }
+  const detailInput = document.getElementById('ai-detail');
+  if (detailInput) {
+    // Through the app's own input handler, so survey.detail follows — a value
+    // saved from an earlier session must not linger invisibly.
+    detailInput.value = '3';
+    detailInput.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  const aiStyle = document.createElement('style');
+  aiStyle.textContent = `
+    #ai-step-1 .ai-detail-head,
+    #ai-step-1 .ai-detail-head + .slider-row { display: none !important; }
+    /* The slider used to separate theme from the fast/best toggle; without it
+       they sat 4px apart. Restore the panel's 14px section rhythm. */
+    #ai-step-1 .ai-quality { margin-top: 14px !important; }
+    /* Belt and braces for the no-scrollbar rule: everything is sized to fit,
+       but an unforeseen overflow should never paint a bar. */
+    #ai-panel { scrollbar-width: none; }
+    #ai-panel::-webkit-scrollbar { display: none; }
+  `;
+  document.head.appendChild(aiStyle);
+
   // ---- corner buttons vs open panels ---------------------------------------
   // The web layout assumes a tall browser window. In a 720px panel the floating
   // cards reach the corners, so the edit button lands on INSERT PNG and the
