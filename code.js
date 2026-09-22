@@ -2,10 +2,11 @@
 // The UI iframe is the whole Pixable web app (built by build.mjs). This side
 // only does what the iframe can't: clientStorage persistence and canvas writes.
 
-// Square, and deliberately under Pixable's 820px breakpoint so the phone
-// layout loads: the dock + bottom sheet suit a plugin panel better than the
-// desktop chrome, and a square canvas previews a repeating pattern honestly.
-figma.showUI(__html__, { width: 700, height: 700, themeColors: false });
+// Square — a repeating pattern previews honestly in a square. The UI forces
+// Pixable's web layout at any size (see ui-shim.js), so the floating controls
+// card and the editors are available even though this is under the 820px
+// phone breakpoint.
+figma.showUI(__html__, { width: 720, height: 720, themeColors: false });
 
 // ---- storage bridge -------------------------------------------------------
 // The UI's localStorage shim keeps an in-memory mirror; we hydrate it once at
@@ -67,12 +68,14 @@ function insertTiled(svg, name, W, H) {
       }
     }
   } catch (e) {
-    // No components available — drop back to a single tile so the user still
-    // gets editable vectors rather than nothing.
+    // Components or instances unavailable — drop back to a single tile so the
+    // user still gets editable vectors rather than nothing. If the component
+    // was already made it has replaced `tile`, so place whichever survives.
     frame.remove();
-    placeFrame(tile, name);
+    const single = component && !component.removed ? component : tile;
+    placeFrame(single, name);
     figma.notify(`Inserted a single tile — ${e.message}`);
-    return tile;
+    return single;
   }
 
   placeFrame(frame, name);
@@ -104,6 +107,20 @@ async function insertPng(bytes, name, size) {
   return frame;
 }
 
+// A raster arrived where vectors were asked for (or the pattern couldn't
+// tile) — say why, rather than silently handing over pixels.
+function rasterReason(why) {
+  if (why.repeats) {
+    return `${why.repeats.toLocaleString()} tile repeats at this size — inserted as an image`;
+  }
+  if (why.shapes) {
+    return `Too dense for vectors (${why.shapes.toLocaleString()} shapes) — inserted as an image`;
+  }
+  if (why.rasterStyle) return 'This freehand style is drawn as pixels — inserted as an image';
+  if (why.snapshot) return "This pattern doesn't repeat cleanly — inserted at its preview size";
+  return 'Inserted as an image';
+}
+
 // ---- messages from the UI -------------------------------------------------
 figma.ui.onmessage = async (msg) => {
   try {
@@ -118,22 +135,11 @@ figma.ui.onmessage = async (msg) => {
         if (msg.size) insertTiled(msg.svg, msg.name || 'Pixel Tile pattern', msg.size.w, msg.size.h);
         else insertSvg(msg.svg, msg.name || 'Pixel Tile pattern');
         figma.ui.postMessage({ type: 'insert-done' });
-        if (msg.heavy) {
-          figma.notify(`${msg.heavy.toLocaleString()} shapes — this may be slow to edit`);
-        }
         break;
       case 'insert-png':
         await insertPng(msg.bytes, msg.name || 'Pixel Tile pattern', msg.size);
         figma.ui.postMessage({ type: 'insert-done' });
-        if (msg.fellBackFrom) {
-          figma.notify(
-            `Too dense for vectors (${msg.fellBackFrom.toLocaleString()} shapes) — inserted as an image`
-          );
-        } else if (msg.tooManyRepeats) {
-          figma.notify(
-            `${msg.tooManyRepeats.toLocaleString()} tile repeats at this size — inserted as an image`
-          );
-        }
+        if (msg.why) figma.notify(rasterReason(msg.why));
         break;
       case 'open-url':
         figma.openExternal(msg.url);

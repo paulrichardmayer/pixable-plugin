@@ -39,6 +39,7 @@
         svg: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" `
            + `viewBox="0 0 ${size} ${size}">\n${inner}</svg>`,
         shapes: dim * dim + 1,
+        size,
       };
     } catch (e) {
       return null; // any surprise in app internals falls back to the full export
@@ -70,38 +71,170 @@
   };
   const saveSize = (s) => localStorage.setItem(SIZE_KEY, JSON.stringify(s));
 
-  // Rasterise the motif tile and repeat it to fill exactly w×h — seamless at
-  // any size, and independent of the viewport the app happens to be showing.
-  px.tiledPng = async (tileSvg, w, h) => {
+  // Past this many shapes a single flat SVG gets slow to edit in Figma.
+  const MAX_VECTOR_NODES = 5000;
+  const SHAPE_RE = /<(rect|circle|ellipse|line|polyline|polygon|path|use)\b/g;
+  const countShapes = (svg) => (svg.match(SHAPE_RE) || []).length;
+  const svgUrl = (svg) => 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+
+  const loadImage = (src) => new Promise((res, rej) => {
     const img = new Image();
-    await new Promise((res, rej) => {
-      img.onload = res; img.onerror = rej;
-      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(tileSvg);
-    });
+    img.onload = () => res(img);
+    img.onerror = () => rej(new Error('could not load the pattern image'));
+    img.src = src;
+  });
+
+  async function canvasBytes(cv) {
+    const blob = await new Promise(r => cv.toBlob(r, 'image/png'));
+    if (!blob) throw new Error('could not encode PNG');
+    return new Uint8Array(await blob.arrayBuffer());
+  }
+
+  // Repeat one tile image to fill exactly w×h — seamless at any size, and
+  // independent of the viewport the app happens to be showing.
+  px.repeatToPng = async (img, w, h) => {
     const cv = document.createElement('canvas');
     cv.width = w; cv.height = h;
     const cx = cv.getContext('2d');
     cx.imageSmoothingEnabled = false; // keep pixel edges crisp when repeating
-    const pattern = cx.createPattern(img, 'repeat');
-    cx.fillStyle = pattern;
+    cx.fillStyle = cx.createPattern(img, 'repeat');
     cx.fillRect(0, 0, w, h);
-    const blob = await new Promise(r => cv.toBlob(r, 'image/png'));
-    return blob ? new Uint8Array(await blob.arrayBuffer()) : null;
+    return canvasBytes(cv);
   };
 
-  // Decide how an insert of the current pattern at the current size should go.
-  px.planInsert = (wantVector) => {
-    const size = px.exportSize();
-    const tile = px.buildTileSvg && px.buildTileSvg();
-    if (!tile) return { kind: 'fallback', size };
-    const m = tile.svg.match(/width="(\d+)"/);
-    const tilePx = m ? +m[1] : 0;
-    if (!wantVector || !tilePx) return { kind: 'raster', size, tile };
+  // Draw an image (usually an SVG that already describes the full artwork)
+  // onto a w×h canvas. The browser does any <pattern> tiling itself.
+  async function drawToPng(img, w, h) {
+    const cv = document.createElement('canvas');
+    cv.width = w; cv.height = h;
+    cv.getContext('2d').drawImage(img, 0, 0, w, h);
+    return canvasBytes(cv);
+  }
+
+  // Kept for tests and older callers: tile SVG in, repeated PNG bytes out.
+  px.tiledPng = async (tileSvg, w, h) => px.repeatToPng(await loadImage(svgUrl(tileSvg)), w, h);
+
+  // ---- exports, per mode ----------------------------------------------------
+  // Every path ends in one of two sandbox messages:
+  //   insert-svg { svg, size? }  size present → repeat the svg as a tile component
+  //   insert-png { bytes, size? } size present → frame is exactly that size
+  // `why` travels with a raster that stood in for requested vectors, so the
+  // sandbox can tell the user rather than silently handing them pixels.
+
+  // Pixelated square/circle/triangle/diamond: one motif tile, repeated.
+  async function exportMotifTile(tile, wantVector, size) {
+    const tilePx = tile.size;
     const repeats = Math.ceil(size.w / tilePx) * Math.ceil(size.h / tilePx);
-    // Too many repeats to stay editable — a raster of the same size is better
-    // than a document Figma struggles with.
-    if (repeats > MAX_INSTANCES) return { kind: 'raster', size, tile, repeats };
-    return { kind: 'vector', size, tile, repeats };
+    if (wantVector && repeats <= MAX_INSTANCES) {
+      return { type: 'insert-svg', svg: tile.svg, size };
+    }
+    const bytes = await px.tiledPng(tile.svg, size.w, size.h);
+    return { type: 'insert-png', bytes, size, why: wantVector ? { repeats } : null };
+  }
+
+  // Hexagons don't repeat on a square tile, but the app's own emitter takes a
+  // target width/height — so draw the hex field at exactly W×H.
+  async function exportHexagons(wantVector, size) {
+    const { palette, motif } = _currentMotif();
+    const inner = _svgHexagons(motif, palette, state.gridSize, size.w, size.h);
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size.w}" height="${size.h}" `
+      + `viewBox="0 0 ${size.w} ${size.h}"><rect width="${size.w}" height="${size.h}" `
+      + `fill="${state.colors[0]}"/>\n${inner}</svg>`;
+    const shapes = countShapes(inner);
+    if (wantVector && shapes <= MAX_VECTOR_NODES) return { type: 'insert-svg', svg };
+    const bytes = await drawToPng(await loadImage(svgUrl(svg)), size.w, size.h);
+    return { type: 'insert-png', bytes, size, why: wantVector ? { shapes } : null };
+  }
+
+  // Freehand SVG: freehand.js emits <svg><rect bg/><rect fill="url(#p)"/></svg>
+  // where #p is one verified repeat — true vector elements after editing or AI,
+  // or an embedded raster tile for the parametric generators. Figma's SVG
+  // importer can't be trusted with <pattern> fills, so we unpack it:
+  //   vector content → that tile as a component, repeated
+  //   raster content → the browser renders the pattern at exactly W×H
+  async function exportFreehandSvg(svg, wantVector, size) {
+    const root = svg.match(/<svg\b[^>]*\bwidth="([\d.]+)"[^>]*\bheight="([\d.]+)"/);
+    const pat = svg.match(/<pattern\b[^>]*\bwidth="([\d.]+)"[^>]*\bheight="([\d.]+)"[^>]*>([\s\S]*?)<\/pattern>/);
+
+    if (!pat || !root) {
+      // No verified repeat — the app fell back to a plain snapshot. It can't
+      // tile, so insert it at its natural size rather than stretching it.
+      const img = await loadImage(svgUrl(svg));
+      const bytes = await drawToPng(img, img.naturalWidth || 1200, img.naturalHeight || 1200);
+      return { type: 'insert-png', bytes, why: { snapshot: true } };
+    }
+
+    const [, pw, ph, content] = pat;
+    const bg = (svg.match(/<rect\b[^>]*\bfill="(?!url\()([^"]+)"/) || [])[1];
+    const isRaster = /<image\b/.test(content);
+
+    if (wantVector && !isRaster) {
+      // The repeat period is usually fractional (e.g. 174.757px). Instances
+      // placed at fractional offsets show hairline seams in Figma, so snap the
+      // tile to whole pixels — a <0.3% rescale, invisible, and seam-free.
+      const tw = Math.max(1, Math.round(pw)), th = Math.max(1, Math.round(ph));
+      const tileSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${tw}" height="${th}" `
+        + `viewBox="0 0 ${tw} ${th}">`
+        + (bg ? `<rect width="${tw}" height="${th}" fill="${bg}"/>` : '')
+        + `<g transform="scale(${(tw / pw).toFixed(6)} ${(th / ph).toFixed(6)})">${content}</g></svg>`;
+      const repeats = Math.ceil(size.w / tw) * Math.ceil(size.h / th);
+      if (repeats <= MAX_INSTANCES) return { type: 'insert-svg', svg: tileSvg, size };
+      return rasterFreehand(svg, root, size, { repeats });
+    }
+    return rasterFreehand(svg, root, size, wantVector ? { rasterStyle: true } : null);
+  }
+
+  // Resize the freehand document's canvas to W×H (root + the full-bleed rects)
+  // and let the browser tile the pattern — no fractional-tile seams.
+  async function rasterFreehand(svg, root, size, why) {
+    const [, W0, H0] = root;
+    const sized = svg
+      .replace(/<svg\b[^>]*>/, (tag) => tag
+        .replace(/\bwidth="[\d.]+"/, `width="${size.w}"`)
+        .replace(/\bheight="[\d.]+"/, `height="${size.h}"`)
+        .replace(/\bviewBox="[^"]*"/, `viewBox="0 0 ${size.w} ${size.h}"`))
+      .replace(new RegExp(`<rect width="${W0}" height="${H0}"`, 'g'),
+        `<rect width="${size.w}" height="${size.h}"`);
+    const bytes = await drawToPng(await loadImage(svgUrl(sized)), size.w, size.h);
+    return { type: 'insert-png', bytes, size, why };
+  }
+
+  // Freehand PNG: freehand.js hands over one verified repeat tile (or, when no
+  // period verifies, the whole canvas). A tile gets repeated to W×H.
+  async function exportFreehandPng(res, size) {
+    // Our own object URL: the app's was revoked the moment it clicked.
+    const url = URL.createObjectURL(await (await res).blob());
+    try {
+      const img = await loadImage(url);
+      const cv = document.getElementById('canvas');
+      const isSnapshot = cv && img.naturalWidth === cv.width && img.naturalHeight === cv.height;
+      if (isSnapshot) {
+        const bytes = await drawToPng(img, img.naturalWidth, img.naturalHeight);
+        return { type: 'insert-png', bytes, why: { snapshot: true } };
+      }
+      return { type: 'insert-png', bytes: await px.repeatToPng(img, size.w, size.h), size };
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  // Entry point from the download interceptor in ui-shim.js. `res` is the
+  // fetch of the app's export, started synchronously inside its click. Returns
+  // the message for the sandbox; the shim posts it (or reports the failure).
+  px.handleExport = async ({ res, wantVector, freehand }) => {
+    const size = px.exportSize();
+    if (freehand) {
+      if (!wantVector) return exportFreehandPng(res, size);
+      return exportFreehandSvg(await (await res).text(), wantVector, size);
+    }
+    // Pixelated builds its output from app state; the app's own export (in
+    // `res`) is viewport-sized and unused. Swallow it so it can't reject loudly.
+    res.catch(() => {});
+    const shape = state.editGrid ? 'square' : state.tileShape;
+    if (shape === 'hexagon') return exportHexagons(wantVector, size);
+    const tile = px.buildTileSvg();
+    if (!tile) throw new Error('could not build the pattern tile');
+    return exportMotifTile(tile, wantVector, size);
   };
 
   // Everything below mutates the DOM for the plugin panel; the builder above
@@ -143,8 +276,7 @@
     setTimeout(() => { btn.textContent = orig; }, 1600);
   };
 
-  wireExport('btn-png');
-  wireExport('btn-svg');
+  for (const id of ['btn-png', 'btn-svg', 'fh-png', 'fh-svg']) wireExport(id);
 
   // ---- removals ----------------------------------------------------------
   // COPY: image clipboard writes need a clipboard-write permission the plugin
@@ -233,7 +365,10 @@
 
   // Relabel exports for the Figma context — these read as canvas actions now,
   // not file downloads.
-  const relabel = { 'btn-png': 'INSERT PNG', 'btn-svg': 'INSERT SVG' };
+  const relabel = {
+    'btn-png': 'INSERT PNG', 'btn-svg': 'INSERT SVG',
+    'fh-png': 'INSERT PNG', 'fh-svg': 'INSERT SVG',
+  };
   for (const [id, text] of Object.entries(relabel)) {
     const el = document.getElementById(id);
     if (el) { el.textContent = text; el.dataset.label = text; }
@@ -246,6 +381,62 @@
     madeBy.textContent = 'go to full version';
     madeBy.href = 'https://pixatile.paulrmayer.com/';
   }
+
+  // ---- corner buttons vs open panels ---------------------------------------
+  // The web layout assumes a tall browser window. In a 720px panel the floating
+  // cards reach the corners, so the edit button lands on INSERT PNG and the
+  // mode toggle on the AI generate button. Rather than hardcode which pairs
+  // collide at which size, measure: any corner control overlapping an open
+  // card steps aside until that card closes.
+  const PANEL_IDS = ['panel', 'fh-panel', 'ai-panel'];
+  const CORNER_IDS = ['edit-btn', 'mode-toggle', 'made-by-tag'];
+  const yieldStyle = document.createElement('style');
+  yieldStyle.textContent = '.px-yield { visibility: hidden !important; pointer-events: none !important; }';
+  document.head.appendChild(yieldStyle);
+
+  const overlaps = (a, b) =>
+    !(a.right <= b.left || a.left >= b.right || a.bottom <= b.top || a.top >= b.bottom);
+
+  function openCardRects() {
+    return PANEL_IDS
+      .map(id => document.getElementById(id))
+      .filter(p => p && getComputedStyle(p).display !== 'none')
+      .map(p => (p.querySelector('.panel-card') || p).getBoundingClientRect())
+      .filter(r => r.width > 0 && r.height > 0);
+  }
+
+  function resolveCollisions() {
+    const cards = openCardRects();
+    for (const id of CORNER_IDS) {
+      const el = document.getElementById(id);
+      if (!el) continue;
+      // visibility:hidden keeps the box, so measuring while hidden is safe.
+      const r = el.getBoundingClientRect();
+      el.classList.toggle('px-yield', r.width > 0 && cards.some(c => overlaps(r, c)));
+    }
+  }
+
+  // Panels open via inline style or class changes from several code paths;
+  // watch them rather than hook each one. Re-check after the open animation.
+  let settleCheck = null;
+  const scheduleCollisions = () => {
+    resolveCollisions();
+    clearTimeout(settleCheck);
+    settleCheck = setTimeout(resolveCollisions, 400);
+  };
+  const collisionObserver = new MutationObserver(scheduleCollisions);
+  for (const id of PANEL_IDS) {
+    const p = document.getElementById(id);
+    if (p) collisionObserver.observe(p, { attributes: true, attributeFilter: ['style', 'class'] });
+  }
+  collisionObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+  window.addEventListener('resize', scheduleCollisions);
+  scheduleCollisions();
+
+  // ---- keyboard focus ----------------------------------------------------
+  // Figma opens the plugin with focus still on its canvas, so the first Space
+  // would pan Figma instead of randomising. Take focus once the app is up.
+  setTimeout(() => { try { window.focus(); } catch (e) { /* not permitted */ } }, 0);
 
   // ---- external links ----------------------------------------------------
   // Plugin iframes have no opener; route clicks through figma.openExternal.

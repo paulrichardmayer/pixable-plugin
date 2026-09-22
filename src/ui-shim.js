@@ -20,6 +20,19 @@
   // no-op keeps early failures from throwing.
   const px = (window.__px = { IN_FIGMA, post, pendingBtn: null, settle: () => {} });
 
+  // ---- force the web (desktop) layout -------------------------------------
+  // Pixable switches to its phone layout below 820px via ONE media query
+  // (index.html's mobile block). The phone layout hides every editing tool —
+  // pixel editor, freehand editor, AI, area refine — and turns controls into a
+  // full-height scrolling sheet. A plugin panel is a desktop pointer context,
+  // so that query must never match here, whatever the window size. The width
+  // CSS between 520–820px only tightens spacing, so the web layout holds up.
+  if (IN_FIGMA && window.matchMedia) {
+    const nativeMatchMedia = window.matchMedia.bind(window);
+    window.matchMedia = (query) =>
+      /max-width:\s*820px/.test(query) ? nativeMatchMedia('not all') : nativeMatchMedia(query);
+  }
+
   // ---- localStorage shim -------------------------------------------------
   // Reads stay synchronous off an in-memory mirror (the app reads storage
   // during init); writes go async to clientStorage and are never awaited.
@@ -39,40 +52,17 @@
     Object.defineProperty(window, 'localStorage', { value: shim, configurable: true });
   }
 
-  // ---- vector budget -----------------------------------------------------
-  // Pixelated mode's SVG export emits one shape per cell across the whole
-  // output area, so node count explodes as cells get smaller. Measured on a
-  // 1328x768 canvas, by the grid-size slider (px per cell):
-  //     4px -> 56,321 shapes (3.3 MB)      16px ->  2,561 shapes
-  //     8px -> 12,801 shapes (749 KB)      24px ->    769 shapes
-  // So the default (8px) is already ~12.8k nodes. Past the budget we insert
-  // the raster instead and say so — which means coarse patterns arrive as
-  // editable vectors and fine ones as images, roughly tracking where vectors
-  // are actually useful to edit. (Freehand's SVG is a <pattern>, a handful of
-  // nodes regardless, so it never trips this.)
-  const MAX_VECTOR_NODES = 5000;
-  const SHAPE_RE = /<(rect|circle|ellipse|line|polyline|polygon|path|use)\b/g;
-  const countShapes = (svg) => (svg.match(SHAPE_RE) || []).length;
-
-  // Re-render the current pattern as PNG bytes. app.js declares
-  // buildExportCanvas at top level, so it's global in the bundle.
-  async function rasterBytes() {
-    if (typeof window.buildExportCanvas !== 'function') return null;
-    const { canvas } = window.buildExportCanvas();
-    const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
-    if (!blob) return null;
-    return new Uint8Array(await blob.arrayBuffer());
-  }
-
   // ---- pattern naming ----------------------------------------------------
   // Export filenames are the app's only description of what it just made:
-  //   pixelgrid-<style>-<SEEDHEX>  |  pixable-freehand
-  // Turn them into something readable in the Figma layers panel.
+  //   <brand>-<style>-<SEEDHEX>  |  <brand>-freehand
+  // Turn them into something readable in the Figma layers panel. The brand
+  // prefix is deliberately not matched — it has already changed twice
+  // (pixelgrid → pixeltile), and each rename silently broke the naming.
   function prettyName(filename) {
     const base = filename.replace(/\.(png|svg)$/i, '');
-    const grid = base.match(/^pixelgrid-(.+)-([0-9A-F]{6})$/i);
-    if (grid) return `Pixel Tile · ${grid[1]} · ${grid[2].toUpperCase()}`;
     if (/freehand/i.test(base)) return 'Pixel Tile · freehand';
+    const grid = base.match(/^[a-z]+-(.+)-([0-9A-F]{6})$/i);
+    if (grid) return `Pixel Tile · ${grid[1]} · ${grid[2].toUpperCase()}`;
     return 'Pixel Tile pattern';
   }
 
@@ -91,44 +81,19 @@
         post({ type: 'notify', message: 'Insert failed: ' + e.message });
       };
       const wantVector = /\.svg$/i.test(dl);
-      const plan = px.planInsert && px.planInsert(wantVector);
+      // Start reading the export NOW, synchronously: freehand.js revokes its
+      // blob URL on the very next line after click(). A fetch begun here has
+      // already resolved the blob, so the revocation can't pull it away.
+      const res = fetch(this.href);
 
-      // Vectors at the requested size: one tile, repeated as instances.
-      if (plan && plan.kind === 'vector') {
-        return post({ type: 'insert-svg', svg: plan.tile.svg, name, size: plan.size });
+      // All per-mode logic lives in ui-overrides.js, which can see app.js's
+      // top-level state; it hands back the message for the sandbox.
+      if (typeof px.handleExport !== 'function') {
+        return fail(new Error('plugin UI did not finish loading'));
       }
-      // A raster of the requested size — either PNG was asked for, or the
-      // repeat count would have made the vector document unworkable.
-      if (plan && plan.kind === 'raster') {
-        px.tiledPng(plan.tile.svg, plan.size.w, plan.size.h)
-          .then(bytes => {
-            if (!bytes) throw new Error('could not rasterise the tile');
-            post({
-              type: 'insert-png', bytes, name, size: plan.size,
-              tooManyRepeats: wantVector ? plan.repeats : 0,
-            });
-          })
-          .catch(fail);
-        return;
-      }
-
-      // plan.kind === 'fallback': hexagons and freehand, which have no motif
-      // tile to repeat, keep the app's own viewport-sized export.
-      if (wantVector) {
-        fetch(this.href).then(r => r.text())
-          .then(async (svg) => {
-            const n = countShapes(svg);
-            if (n <= MAX_VECTOR_NODES) return post({ type: 'insert-svg', svg, name });
-            // Too dense for vectors — degrade to the raster rather than
-            // handing Figma a document it will choke on.
-            const bytes = await rasterBytes();
-            if (!bytes) return post({ type: 'insert-svg', svg, name, heavy: n });
-            post({ type: 'insert-png', bytes, name, fellBackFrom: n });
-          }).catch(fail);
-      } else {
-        fetch(this.href).then(r => r.arrayBuffer())
-          .then(buf => post({ type: 'insert-png', bytes: new Uint8Array(buf), name })).catch(fail);
-      }
+      px.handleExport({ res, wantVector, freehand: /freehand/i.test(dl) })
+        .then(msg => post({ ...msg, name }))
+        .catch(fail);
     };
   }
 

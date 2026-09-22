@@ -37,6 +37,25 @@ Make it feel native to a plugin panel, not a website in a box.
 - [ ] Wire `figma.ui.resize` to a drag handle + persist the chosen size
 - [ ] Verify Google Fonts actually loads in the iframe; if not, inline Host Grotesk as a data URI
 
+## v1.1 — post-launch fixes ✦ current
+
+Published v1 used Pixable's phone layout (square window under the 820px
+breakpoint). That layout hides every editor and turns controls into a
+full-height scrolling sheet — the root of "can't edit" and "panel too big".
+
+- [x] **Web layout forced at any window size** (`ui-shim.js` makes the one 820px `matchMedia` never match). 720×720 window; controls are the floating web card again (pixelated 644px, freehand 552px — both fit, no scroll)
+- [x] **Editing restored**: pixel editor, freehand editor, AI panel, area refine — all verified opening and fitting at 720×720
+- [x] Corner buttons step aside while they overlap an open card (measured live): edit over INSERT PNG, mode toggle over AI generate
+- [x] **Bug: freehand INSERT inserted the hidden pixelated tile.** Exports are now mode-aware (`px.handleExport`): pixelated → motif tile; hexagon → hex field drawn at W×H; freehand → unpacks its own repeat (vector tile as component instances, raster tile rendered at W×H, non-repeating snapshot at preview size with a notice)
+- [x] **Bug: freehand PNG could fail** — freehand.js revokes its blob URL right after `click()`; the interceptor now starts the fetch synchronously
+- [x] Bug: freehand buttons had no INSERT label or `imported!` feedback
+- [x] Bug: hexagons ignored W×H
+- [x] Bug: layer names fell back to "Pixel Tile pattern" after Pixable renamed exports `pixelgrid-` → `pixeltile-`; the parser no longer matches the brand prefix
+- [x] Freehand vector tiles snapped to whole pixels (no hairline seams between instances)
+- [x] Instancing fallback no longer throws after `createComponentFromNode` consumed the tile
+- [x] Proxy allowlist gains `null` (the plugin iframe's origin) — **needs `npx wrangler deploy`**
+- [ ] **YOU:** redeploy the worker, test in Figma (checklist in the release notes), publish new version
+
 ## Phase 3 — AI feature
 
 - [ ] Add `"null"` to `ALLOW_ORIGIN` in `Pixable/proxy/wrangler.toml` (plugin iframes send `Origin: null`; per-IP rate limit already protects quota)
