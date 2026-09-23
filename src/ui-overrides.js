@@ -409,6 +409,27 @@
     detailInput.value = '3';
     detailInput.dispatchEvent(new Event('input', { bubbles: true }));
   }
+  // With the detail slider hidden, the app's advice to "lower the detail"
+  // points at a control that isn't there. Its error mapper lives in a closure,
+  // so rewrite the rendered text instead — both the survey and refine errors.
+  const DETAIL_ADVICE = [
+    [/\s*Lower the detail and try again\.?/i, ' Try again in a moment.'],
+    [/Try again, or lower the detail\.?/i, 'Try again in a moment.'],
+  ];
+  const errorObserver = new MutationObserver((records) => {
+    for (const r of records) {
+      const el = r.target.nodeType === 1 ? r.target : r.target.parentElement;
+      if (!el) continue;
+      let text = el.textContent;
+      for (const [re, to] of DETAIL_ADVICE) text = text.replace(re, to);
+      if (text !== el.textContent) el.textContent = text;   // no-op on the second pass
+    }
+  });
+  for (const id of ['ai-error', 'ai-result-error']) {
+    const el = document.getElementById(id);
+    if (el) errorObserver.observe(el, { childList: true, characterData: true, subtree: true });
+  }
+
   const aiStyle = document.createElement('style');
   aiStyle.textContent = `
     #ai-step-1 .ai-detail-head,
